@@ -170,7 +170,7 @@ spec:
         effect: "NoSchedule"
       hostNetwork: true
       initContainers:
-      - image: gcr.io/varunmar-k8s-dev/netd-amd64:latest
+      - image: gcr.io/google-containers/netd-amd64:latest
         name: install-cni
         command: ["sh", "/install-cni.sh"]
         env:
@@ -203,7 +203,7 @@ spec:
         - mountPath: /host/etc/cni/net.d
           name: cni-net-dir
       containers:
-      - image: gcr.io/varunmar-k8s-dev/netd-amd64:latest
+      - image: gcr.io/google-containers/netd-amd64:latest
         name: netd
         imagePullPolicy: Always
         securityContext:
