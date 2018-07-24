@@ -15,6 +15,11 @@
 # limitations under the License.
 
 set -u -e
+if ["${ENABLE_CALICO_NETWORK_POLICY}" = true]; then
+  echo "Calico Network Policy is enabled by ENABLE_CALICO_NETWORK_POLICY. Disabling CNI Spec."
+  exit 0
+fi
+  
 
 echo "netd version: @VERSION@"
 
