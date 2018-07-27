@@ -1,3 +1,5 @@
+#!/bin/sh
+
 CNI_SPEC_TEMPLATE=$(cat << 'EOF'
 {
       "name": "k8s-pod-network",
@@ -29,15 +31,16 @@ EOF
                  )
 
 echo "Template is $CNI_SPEC_TEMPLATE"
+ipv4_subnet='"192.168.1.0/24"'
 echo "Adding IPV4 subnet range ${ipv4_subnet:-}."
 cni_spec=$(echo ${CNI_SPEC_TEMPLATE:-} | sed -e "s#@ipv4Subnet#[{\"subnet\": ${ipv4_subnet:-}}]#g")
 echo $cni_spec
 
 ENABLE_PRIVATE_IPV6_ACCESS=true
 if [ "$ENABLE_PRIVATE_IPV6_ACCESS" = true ]; then
-  node_ipv6_addr="fe80::"
+  node_ipv6_addr="null"
 
-  if [ -n "${node_ipv6_addr:-}" ]; then
+  if [ -n "${node_ipv6_addr:-}" ] && [ "${node_ipv6_addr}" != "null" ]; then
     echo "Found IPV6 address assignment ${node_ipv6_addr:-}."
     cni_spec=$(echo ${cni_spec:-} | sed -e \
                "s#@ipv6SubnetOptional#, [{\"subnet\": \"${node_ipv6_addr:-}/112\"}]#g; 
