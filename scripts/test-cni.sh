@@ -30,6 +30,48 @@ CNI_SPEC_TEMPLATE=$(cat << 'EOF'
 EOF
                  )
 
+CNI_CALICO_SPEC_TEMPLATE=$(cat << 'EOF'
+{
+  "name": "k8s-pod-network",
+  "cniVersion": "0.3.0",
+  "plugins": [
+    {
+    "type": "calico",
+    "log_level": "debug",
+    "datastore_type": "kubernetes",
+    "nodename": "__KUBERNETES_NODE_NAME__",
+    "ipam": {
+      "type": "host-local",
+      "ranges": [
+      [ { "subnet": "usePodCidr" } ]@ipv6SubnetOptional
+      ],
+      "routes": [
+        {"dst": "0.0.0.0/0"}@ipv6RouteOptional
+      ]
+    },
+    "policy": {
+      "type": "k8s",
+      "k8s_auth_token": "__SERVICEACCOUNT_TOKEN__"
+    },
+    "kubernetes": {
+      "k8s_api_root": "https://__KUBERNETES_SERVICE_HOST__:__KUBERNETES_SERVICE_PORT__",
+      "kubeconfig": "__KUBECONFIG_FILEPATH__"
+      }
+    },
+    {
+      "type": "portmap",
+      "capabilities": {
+        "portMappings": true
+      },
+      "snat": true
+    }
+  ]
+}
+EOF
+                           )
+
+
+
 echo "Template is $CNI_SPEC_TEMPLATE"
 ipv4_subnet='"192.168.1.0/24"'
 echo "Adding IPV4 subnet range ${ipv4_subnet:-}."
@@ -57,3 +99,53 @@ else
 fi
 
 echo $cni_spec
+
+if [ "${ENABLE_CALICO_NETWORK_POLICY}" == "true" ]; then
+  echo "Calico Network Policy is enabled by ENABLE_CALICO_NETWORK_POLICY. Generating Calico spec."
+  cni_spec=${CNI_CALICO_SPEC_TEMPLATE}
+else
+  cni_spec=${CNI_SPEC_TEMPLATE}
+fi
+
+
+token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+node_url="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}/api/v1/nodes/${HOSTNAME}"
+ipv4_subnet=$(curl -k -s -H "Authorization: Bearer $token" $node_url | jq '.spec.podCIDR')
+if [ -z "${ipv4_subnet:-}" ]; then
+  echo "Failed to fetch PodCIDR from K8s API server. Exiting with an error (1) ..."
+  exit 1
+fi
+
+if [ -w /host/etc/cni/net.d ]; then
+  echo "Adding IPV4 subnet range ${ipv4_subnet:-}."
+  cni_spec=$(echo ${cni_spec:-} | sed -e "s#@ipv4Subnet#[{\"subnet\": ${ipv4_subnet:-}}]#g")
+
+  if [ "$ENABLE_PRIVATE_IPV6_ACCESS" == "true" ]; then
+    node_ipv6_addr=$(curl -s -k --fail "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/?recursive=true" -H "Metadata-Flavor: Google" | jq -r '.ipv6s[0]' ) ||:
+
+    if [ -n "${node_ipv6_addr:-}" ] && [ "${node_ipv6_addr}" != "null" ]; then
+      echo "Found IPV6 address assignment ${node_ipv6_addr:-}."
+      cni_spec=$(echo ${cni_spec:-} | sed -e \
+        "s#@ipv6SubnetOptional#, [{\"subnet\": \"${node_ipv6_addr:-}/112\"}]#g;
+         s#@ipv6RouteOptional#, {\"dst\": \"::/0\"}#g")
+    else
+      echo "Found empty IPV6 address assignment. Skipping IPV6 subnet and range configuration."
+      cni_spec=$(echo ${cni_spec:-} | \
+        sed -e "s#@ipv6SubnetOptional##g; s#@ipv6RouteOptional##g")
+    fi
+  else
+    echo "Disabling IPV6 subnet and range configuration. Set ENABLE_PRIVATE_IPV6_ACCESS=true to configure IPV6."
+    cni_spec=$(echo ${cni_spec:-} | \
+      sed -e "s#@ipv6SubnetOptional##g; s#@ipv6RouteOptional##g")
+  fi
+
+cat >/host/etc/cni/net.d/$CNI_SPEC_NAME <<EOF
+${cni_spec:-}
+EOF
+
+echo "Created PTP CNI spec ${CNI_SPEC_NAME}!"
+
+else
+  echo "Could not find writable directory /etc/cni/net.d, which is expected to be mounted at /host/etc/cni/net.d. Exiting with error(2)."
+  exit 2
+fi
