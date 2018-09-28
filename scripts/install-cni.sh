@@ -14,22 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -u -e
+set -u -e  
+
+echo "netd version: @VERSION@"
+
+cni_spec=${CNI_SPEC_TEMPLATE}
 if ["${ENABLE_CALICO_NETWORK_POLICY}" = true]; then
   echo "Calico Network Policy is enabled by ENABLE_CALICO_NETWORK_POLICY. Disabling CNI Spec."
   exit 0
 fi
-  
-
-echo "netd version: @VERSION@"
-
-if [ "${ENABLE_CALICO_NETWORK_POLICY}" == "true" ]; then
-  echo "Calico Network Policy is enabled by ENABLE_CALICO_NETWORK_POLICY. Generating Calico CNI spec."
-  cni_spec=${CALICO_CNI_SPEC_TEMPLATE}
-else
-  cni_spec=${CNI_SPEC_TEMPLATE}
-fi
-
 
 token=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
 node_url="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}/api/v1/nodes/${HOSTNAME}"
